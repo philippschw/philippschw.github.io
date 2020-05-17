@@ -1,0 +1,40 @@
+title: Philipp Schwarz
+author: Philipp Schwarz
+email: philipp.schw@gmail.com
+description: >- # this means to ignore newlines until "show_exerpts:"
+  Machine Learning Engineer & Data Scientist  with strong statistical 
+  modeling and programming skills. I prefer working in a high-performance environment and in an
+  interdisciplinary team. Reach out to me if you got a project that is
+  unprecedented, and you need a pragmatic guy that delivers.
+show_excerpts: true # set to true to show excerpts on the homepage
+baseurl: "" # the subpath of your site, e.g. /blog
+url: "https://philippschw.github.io" # the base hostname & protocol for your site, e.g. http://example.com
+
+# Minima date format
+sass:
+  sass_dir: _sass
+plainwhite:
+  name: Philipp Schwarz
+  tagline: |-
+    Machine Learning Engineer &
+    Data Scientist
+  date_format: "%b %-d, %Y"
+  sitemap: true # set to true to generate sitemap.xml content
+
+  # generate social links in footer
+  social_links:
+    github:  philippschw
+    linkedIn: in/philippschw
+    twitter:  philippschw
+
+# If you want to link only specific pages in your header, uncomment
+# this and add the path to the pages in order as they should show up
+#header_pages:
+# - about.md
+
+# Build settings
+theme: plainwhite
+
+#plugins:
+#  - jekyll-seo-tag
+#  - jekyll-feed
