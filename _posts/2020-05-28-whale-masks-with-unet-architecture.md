@@ -1,27 +1,27 @@
-### By Team docithurtswhaleIP:
-Wenjie Cai & Philipp Schwarz
+---
+layout: post
+title:  "Whale Masks with Unet Architecture"
+date:   2020-05-28 12:00:00 +0100
+author: Philipp Schwarz
+categories: masking, image_segmentation computer_vision
+---
+The goal of this notebook is to show how to generate very good masks for the fluke of sperm whale based on only 450 annotated humpback flukes.
 
+[Data source](https://storage.googleapis.com/kaggle-forum-message-attachments/459392/11072/masks.zip)
 
-# Whale Masks with Unet Architecture
+Packages used:
+- tensorflow, segmentation_models, albumentations
 
-Forked and adapted from [Costas Voglis's Kernel](https://www.kaggle.com/voglinio/generalizing-whale-masks-with-masked-results)
+Forked and improved from [Costas Voglis's Kernel](https://www.kaggle.com/voglinio/generalizing-whale-masks-with-masked-results)
 
 This kernel shows how to generate very good masks for the fluke of the whale based on only 450 annotated fluke masks.
-For this image segmentation task, we will describe the model architecture - U-NET and the data augmentation we used to mitigate overfitting.
+For this image segmentation task, I will describe the model architecture - U-NET and the data augmentation I used to mitigate overfitting.
 The 450 fluke masks were provided by  Dene originally for the [Humpback Whale Identification Challenge on Kaggle](https://www.kaggle.com/c/whale-categorization-playground) and can be downloaded [here](https://storage.googleapis.com/kaggle-forum-message-attachments/459392/11072/masks.zip). 
 Segmenting the fluke and adding it as information in a fourth channel, significantly improved our score on the whale identification challenge. By adding it as a seperate channel the metric learning model can learn to recognize the fluke based on the characteristic contours of the fluke without loosing other potentially valuable information such as the background information of the sea.
 
-We use pretrained keras models from this great repo [segmentation_models](https://github.com/qubvel/segmentation_models) and sophisticated image augmentation using the python package [albumentations](https://github.com/albumentations-team/albumentations).
+I use pretrained keras models from this great repo [segmentation_models](https://github.com/qubvel/segmentation_models) and sophisticated image augmentation using the python package [albumentations](https://github.com/albumentations-team/albumentations).
 
 Fundamentally, the task is single class segmentation. Interestingly, only 450 fluke masks are enough to generalize to the whole train and test set of the kaggle channel and even to the GDSC dataset that has different image properties.
-
-
-```python
-import sys
-sys.executable
-```
-
-    '/anaconda/envs/kerasgpu/bin/python'
 
 ```python
 import numpy as np
@@ -56,19 +56,11 @@ import tensorflow.keras as keras
 import segmentation_models as sm
 
 from tqdm import tqdm_notebook, tqdm
-```
-
-    Segmentation Models: using `tf.keras` framework.
-    
-
+``` 
 
 ```python
 tf.__version__
 ```
-
-
-
-
     '2.1.0'
 
 
@@ -122,7 +114,7 @@ WC = np.array(WC)
 
 #### Define Data augmentation transformations
 
-For data augmentation We use albumentations a libary that has a very simple, flexible APWe that allows the library to be plugged in any computer vision pipeline. The library provides almost any thinkable transformation and was written by Kaggle Masters
+For data augmentation I use albumentations a libary that has a very simple, flexible APWe that allows the library to be plugged in any computer vision pipeline. The library provides almost any thinkable transformation and was written by Kaggle Masters
 
 
 ```python
@@ -150,7 +142,7 @@ aug = Compose([
 
 #### Define Data loader
 
-Besides the data loading procedure, here We defined the backbone of the unet model, We use **seresnet34**. In contrast to conventional resnet34, seresnet34 uses an additional trick called **Squeeze-and-Excitation** which often helps the model generalize extremely well. The (SE) block adaptively recalibrates
+Besides the data loading procedure, here I defined the backbone of the unet model, I use **seresnet34**. In contrast to conventional resnet34, seresnet34 uses an additional trick called **Squeeze-and-Excitation** which often helps the model generalize extremely well. The (SE) block adaptively recalibrates
 channel-wise feature responses by explicitly modelling interdependencies between channels. For more information take a look a the original [paper](https://arxiv.org/pdf/1709.01507.pdf)
 
 
@@ -239,7 +231,7 @@ class DataGenerator(keras.utils.Sequence):
         return XX, YY
 ```
 
-We define the default preprocessing for resnet architectures and create train and validation generators (`keras.utils.Sequence`). Note that the data augmentation is only applied on the training generator.
+I define the default preprocessing for resnet architectures and create train and validation generators (`keras.utils.Sequence`). Note that the data augmentation is only applied on the training generator.
 
 
 ```python
@@ -348,7 +340,7 @@ def bce_dice_loss(y_true, y_pred):
     return loss
 ```
 
-Let's train the model to see what we can get.
+Let's train the model to see what I can get.
 
 
 ```python
@@ -465,7 +457,7 @@ class TestDataGenerator(keras.utils.Sequence):
 
 ### Make Predicitions on GDSC dataset
 
-We use Test-time augmentation (TTA) which applies also data augmentation to the test dataset and by averaging predictions, we achieve a little bit more robust masks.
+I use Test-time augmentation (TTA) which applies also data augmentation to the test dataset and by averaging predictions, I achieve a little bit more robust masks.
 
 
 ```python
@@ -537,32 +529,9 @@ plt.show()
 
 ### Make Predicitions on Kaggle Dataset
 
-When we want to use the whale tails provided by Kaggle for pretraining, we should also create masks on this dataset.
+When we want to use the whale flukes provided by Kaggle for pretraining, we should also create masks on this dataset.
 
-
-```python
-# null_aug = Compose([])
-# valid_genarator = DataGenerator(X[450:], M[450:], batch_size=16, aug=null_aug, preprocess_input=preprocess_input, dim=DIMENSION, 
-#                                shuffle=False)
-# preds = model.predict_generator(valid_genarator, verbose=1)
-
-# flip_aug = Compose([HorizontalFlip(p=1.0) ])
-# valid_genarator = DataGenerator(X[450:], M[450:], batch_size=16, aug=flip_aug, preprocess_input=preprocess_input,  dim=DIMENSION, shuffle=False)
-# preds_hflip = model.predict_generator(valid_genarator, verbose=1)
-
-# blur_aug = Compose([Blur(p=1.0)])
-# valid_genarator = DataGenerator(X[450:], M[450:], batch_size=16, aug=blur_aug, preprocess_input=preprocess_input,  dim=DIMENSION, shuffle=False)
-# preds_blur = model.predict_generator(valid_genarator, verbose=1)
-
-# TARGET_VAL = []
-# for i in range(len(preds)):
-#     pp = (preds[i])# + np.fliplr(preds_hflip[i]) + preds_blur[i])/3
-#     TARGET_VAL.append(pp)
-
-# TARGET_VAL = np.array(TARGET_VAL)  
-```
-
-The nice side effect from segmenting the whale flukes is that we can get tight bounding boxes as well. In the figure bellow we keep a tight bounding box and only pixels that correspond to the mask. There are several ways to move from here:
+The nice side effect from segmenting the whale flukes is that I can get tight bounding boxes as well. In the figure bellow I keep a tight bounding box and only pixels that correspond to the mask. There are several ways to move from here:
 #### Draw masked flukes on white background
 
 
