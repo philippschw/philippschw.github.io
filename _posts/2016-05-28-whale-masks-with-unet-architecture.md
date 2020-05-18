@@ -1,7 +1,7 @@
 ---
 layout: post
 title:  "Whale Masks with Unet Architecture"
-date:   2020-05-28 12:00:00 +0100
+date:   2026-05-28 12:00:00 +0100
 author: Philipp Schwarz
 categories: masking, image_segmentation computer_vision
 ---
