@@ -12,8 +12,6 @@ The goal of this notebook is to show how to generate very good masks for the flu
 Packages used:
 - tensorflow, segmentation_models, albumentations
 
-Forked and improved from [Costas Voglis's Kernel](https://www.kaggle.com/voglinio/generalizing-whale-masks-with-masked-results)
-
 This kernel shows how to generate very good masks for the fluke of the whale based on only 450 annotated fluke masks.
 For this image segmentation task, I will describe the model architecture - U-NET and the data augmentation I used to mitigate overfitting.
 The 450 fluke masks were provided by  Dene originally for the [Humpback Whale Identification Challenge on Kaggle](https://www.kaggle.com/c/whale-categorization-playground) and can be downloaded [here](https://storage.googleapis.com/kaggle-forum-message-attachments/459392/11072/masks.zip). 
