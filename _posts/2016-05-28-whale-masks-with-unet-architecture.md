@@ -1,11 +1,13 @@
 ---
 layout: post
 title:  "Whale Masks with Unet Architecture"
-date:   2026-05-28 12:00:00 +0100
+date:   2016-05-28 12:00:00 +0100
 author: Philipp Schwarz
 categories: masking, image_segmentation computer_vision
 ---
 The goal of this notebook is to show how to generate very good masks for the fluke of sperm whale based on only 450 annotated humpback flukes.
+
+## What are masks?
 
 [Data source](https://storage.googleapis.com/kaggle-forum-message-attachments/459392/11072/masks.zip)
 
@@ -61,7 +63,7 @@ tf.__version__
 ```
     '2.1.0'
 
-
+## Key points
 
 One of the key pillars for the creating good masks was to resize the image to an rectangular shape and do not make it quadratic.
 
