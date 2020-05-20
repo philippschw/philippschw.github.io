@@ -12,7 +12,7 @@ permalink: /:categories/:title/
 
 plainwhite:
   name: Philipp Schwarz
-  tagline: Quant & Data Scientist
+  tagline: Data Scientist
   date_format: "%b %-d, %Y"
   dark_mode: true
 
