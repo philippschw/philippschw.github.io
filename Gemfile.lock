@@ -211,8 +211,9 @@ GEM
       sawyer (~> 0.8.0, >= 0.5.3)
     pathutil (0.16.2)
       forwardable-extended (~> 2.6)
-    plainwhite (0.5.1)
-      jekyll (~> 3.7.3)
+    plainwhite (0.10)
+      jekyll (>= 3.7.3)
+      jekyll-seo-tag (>= 2.1.0)
     public_suffix (3.0.3)
     rb-fsevent (0.10.3)
     rb-inotify (0.10.0)
@@ -221,7 +222,7 @@ GEM
     ruby-enum (0.7.2)
       i18n
     ruby_dep (1.5.0)
-    rubyzip (1.2.2)
+    rubyzip (2.3.0)
     safe_yaml (1.0.5)
     sass (3.7.3)
       sass-listen (~> 4.0.0)
@@ -247,7 +248,7 @@ DEPENDENCIES
   github-pages
   jekyll-feed (~> 0.6)
   jekyll-redirect-from
-  plainwhite (~> 0.5.1)
+  plainwhite (~> 0.10)
   tzinfo-data
 
 BUNDLED WITH
