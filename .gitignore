@@ -3,11 +3,11 @@
 .jekyll-metadata
 .DS_Store
 
-_includes/**
-_layouts/**
-_posts/**
-_sass/**
-_assets/**
+_includes/
+_layouts/
+_posts/
+_sass/
+_assets/
 images/
 _config.yml
 404.html
