@@ -2,12 +2,15 @@
 .sass-cache
 .jekyll-metadata
 .DS_Store
+Gemfile.lock
+Gemfile
+
 
 _includes/
 _layouts/
 _posts/
 _sass/
-_assets/
+assets/
 images/
 _config.yml
 404.html
