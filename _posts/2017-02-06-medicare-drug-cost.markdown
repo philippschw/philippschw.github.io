@@ -1,982 +1,600 @@
 ---
 layout: post
-title:  "Analysis of Medicare Drug Cost Data 2011-2015"
-date:   2017-02-06 12:00:00 +0100
+title:  "Whale Masks with Unet Architecture"
+date:   2020-05-22 12:00:00 +0100
 author: Philipp Schwarz
-categories: visualization data_analysis healthcare
+categories: masking image_segmentation computer_vision
 ---
-Health care systems world-wide are under pressure due to the high costs associated with disease. Now more than ever, particularly in developed countries, we have access to the latest advancements in medicine. This contrasts with the challenge of making those treatments available to as many patients as possible. It is imperative to find ways maximize the positive impact on the quality of life of patients, while maintaining a sustainable health care system. For this purpose I performed an analysis of Medicare data in the USA. Furthermore I used a drug-disease open database to cluster the costs by disease. I identified the most expensive diseases (mostly chronic diseases such as Diabetes) and the most expensive medicines. 
+The goal of this notebook is to show how to generate very good masks for the fluke of sperm whale based on only 450 annotated humpback flukes.
 
-A drug for the treatment of HCV infections (Harvoni) stands out with the highest total costs in 2015. After this first exploration, I propose the in-depth analysis of further data to enable more targeted conclusions and recommendations to improve health care, such as linking of price databases to compare drug costs for the similar indications or the analysis of population data registers that document life style characteristics of healthy and sick individuals to identify those at risk of developing high-cost diseases.
+## What are masks?
 
-# Relevance
+[Data source](https://storage.googleapis.com/kaggle-forum-message-attachments/459392/11072/masks.zip)
 
-Health care costs amount to a considerable part of the national budgets all over the world. In 2015, $3.2 trillion were spent for health care in the USA ([17.8% of its GDP](https://www.cms.gov/research-statistics-data-and-systems/statistics-trends-and-reports/nationalhealthexpenddata/nationalhealthaccountshistorical.html)).  In Germany, the health care spending reached [11.3% of GDP in 2014](http://data.worldbank.org/indicator/SH.XPD.TOTL.ZS?locations=DE). On the one hand, this high health care costs can be explained by the population growth, particularly the elderly proportion, requiring higher investments to secure quality of life. On the other hand, new medicines are continously being discovered enabling the treatment of diseases that were once a sentence of death. This has as a consequence that many once fatal diseases have now become chronic with a high burden on the health care costs.
+Packages used:
+- tensorflow, segmentation_models, albumentations
 
-But how can governments and insurers make sure that patients receive the care they need, including latest technology advances, without bankrupting the system? One first step is the identification of high-cost diseases and drugs. This insights can then be used to identify population segments at high-risk of developing a disease, who can then be the focus of prevention measures.
+This kernel shows how to generate very good masks for the fluke of the whale based on only 450 annotated fluke masks.
+For this image segmentation task, I will describe the model architecture - U-NET and the data augmentation I used to mitigate overfitting.
+The 450 fluke masks were provided by  Dene originally for the [Humpback Whale Identification Challenge on Kaggle](https://www.kaggle.com/c/whale-categorization-playground) and can be downloaded [here](https://storage.googleapis.com/kaggle-forum-message-attachments/459392/11072/masks.zip). 
+Segmenting the fluke and adding it as information in a fourth channel, significantly improved our score on the whale identification challenge. By adding it as a seperate channel the metric learning model can learn to recognize the fluke based on the characteristic contours of the fluke without loosing other potentially valuable information such as the background information of the sea.
 
-Governments, insurers, patient organizations, pharmaceutical and biotech companies need all to leverage their available data, if we are to improve the health of patients now and in future generations.
+I use pretrained keras models from this great repo [segmentation_models](https://github.com/qubvel/segmentation_models) and sophisticated image augmentation using the python package [albumentations](https://github.com/albumentations-team/albumentations).
 
-# Methods
-
-## Data sources
-
-- [Medicare Drug Spending Data 2011-2015](https://www.cms.gov/Research-Statistics-Data-and-Systems/Statistics-Trends-and-Reports/Information-on-Prescription-Drugs/2015MedicareData.html): drug spending and utilization data. _In this analysis only Medicare Part D drugs were considered (drugs patients generally administer themselves)_
-- [Therapeutic Targets Database](http://bidd.nus.edu.sg/BIDD-Databases/TTD/TTD_Download.asp): Drug-to-disease mapping with ICD identifiers.
-
-## Tools
-
-- pandas for data crunching
-- fuzzywuzzy for fuzzy logic matching
-- git for version control
-
-## Data preprocessing
-
-First, I cleaned up and processed the drug spending data available from Medicare for the years 2011-2015. This data includes the total spending, claim number, and beneficiary number --among others-- for each drug identified by its brand and generic names.
-
-
+Fundamentally, the task is single class segmentation. Interestingly, only 450 fluke masks are enough to generalize to the whole train and test set of the kaggle channel and even to the GDSC dataset that has different image properties.
 
 ```python
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
-sns.set_palette('Paired')
-sns.set_style('whitegrid')
-%matplotlib inline
 
-import warnings
-warnings.filterwarnings('ignore')
+seed = 66
+np.random.seed(seed)
+import cv2
+import json
+import glob
+import os
+from tqdm import *
+from shutil  import copyfile, rmtree 
+from pathlib import Path
+
+from matplotlib import pyplot as plt
+
+import tensorflow as tf
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+from tensorflow.keras.models import Sequential, Model
+from tensorflow.keras.layers import Dropout, Flatten, Dense, SpatialDropout2D, Input
+from tensorflow.keras import applications
+from tensorflow.keras.preprocessing import image
+from tensorflow.keras.preprocessing.image import load_img
+
+from tensorflow.keras.callbacks import CSVLogger, ModelCheckpoint, LearningRateScheduler, EarlyStopping, ReduceLROnPlateau
+from tensorflow.keras.optimizers import Adam, SGD
+from tensorflow.keras.losses import binary_crossentropy
+from tensorflow.keras import backend as K
+
+import tensorflow.keras as keras
+import segmentation_models as sm
+
+from tqdm import tqdm_notebook, tqdm
+``` 
+
+```python
+tf.__version__
+```
+    '2.1.0'
+
+## Key points
+
+One of the key pillars for the creating good masks was to resize the image to an rectangular shape and do not make it quadratic.
+
+
+```python
+DIMENSION = (384, 192)
 ```
 
 
 ```python
-data = pd.read_csv('data/medicare_data_disease.csv')
-data.head()
+TRAIN_PATH = '../input/train/'
+TEST_PATH = '../input/test/'
+MASK_PATH = '../input/masks/'
+WC_PATH = '../WC_input/data/'
 ```
 
-
-
-
-<div>
-<table border="1" class="dataframe">
-  <thead>
-    <tr style="text-align: right;">
-      <th></th>
-      <th>Brand Name</th>
-      <th>Generic Name</th>
-      <th>Claim Count</th>
-      <th>Total Spending</th>
-      <th>Beneficiary Count</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <th>0</th>
-      <td>10 wash</td>
-      <td>sulfacetamide sodium</td>
-      <td>24.0</td>
-      <td>1569.19</td>
-      <td>16.0</td>
-    </tr>
-    <tr>
-      <th>1</th>
-      <td>1st tier unifine pentips</td>
-      <td>pen needle, diabetic</td>
-      <td>2472.0</td>
-      <td>57666.73</td>
-      <td>893.0</td>
-    </tr>
-    <tr>
-      <th>2</th>
-      <td>1st tier unifine pentips plus</td>
-      <td>pen needle, diabetic</td>
-      <td>NaN</td>
-      <td>NaN</td>
-      <td>NaN</td>
-    </tr>
-    <tr>
-      <th>3</th>
-      <td>60pse-400gfn-20dm</td>
-      <td>guaifenesin/dm/pseudoephedrine</td>
-      <td>12.0</td>
-      <td>350.10</td>
-      <td>11.0</td>
-    </tr>
-    <tr>
-      <th>4</th>
-      <td>8-mop</td>
-      <td>methoxsalen</td>
-      <td>11.0</td>
-      <td>9003.26</td>
-      <td>NaN</td>
-    </tr>
-  </tbody>
-</table>
-</div>
-<div>
-<table border="1" class="dataframe">
-  <thead>
-    <tr style="text-align: right;">
-      <th></th>
-      <th>Brand Name</th>
-      <th>Total Annual Spending Per User</th>
-      <th>Unit Count</th>
-      <th>Average Cost Per Unit (Weighted)</th>
-      <th>Beneficiary Count No LIS</th>
-      <th>Average Beneficiary Cost Share No LIS</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <th>0</th>
-      <td>10 wash</td>
-      <td>98.074375</td>
-      <td>5170.0</td>
-      <td>0.303518</td>
-      <td>NaN</td>
-      <td>NaN</td>
-    </tr>
-    <tr>
-      <th>1</th>
-      <td>1st tier unifine pentips</td>
-      <td>64.576405</td>
-      <td>293160.0</td>
-      <td>0.196766</td>
-      <td>422.0</td>
-      <td>42.347204</td>
-    </tr>
-    <tr>
-      <th>2</th>
-      <td>1st tier unifine pentips plus</td>
-      <td>NaN</td>
-      <td>NaN</td>
-      <td>NaN</td>
-      <td>NaN</td>
-      <td>NaN</td>
-    </tr>
-    <tr>
-      <th>3</th>
-      <td>60pse-400gfn-20dm</td>
-      <td>31.827273</td>
-      <td>497.0</td>
-      <td>0.704427</td>
-      <td>NaN</td>
-      <td>NaN</td>
-    </tr>
-    <tr>
-      <th>4</th>
-      <td>8-mop</td>
-      <td>NaN</td>
-      <td>298.0</td>
-      <td>30.212282</td>
-      <td>NaN</td>
-      <td>NaN</td>
-    </tr>
-  </tbody>
-</table>
-</div>
-<div>
-<table border="1" class="dataframe">
-  <thead>
-    <tr style="text-align: right;">
-      <th></th>
-      <th>Brand Name</th>
-      <th>Beneficiary Count LIS</th>
-      <th>Average Beneficiary Cost Share LIS</th>
-      <th>Year</th>
-      <th>Matched Drug Name</th>
-      <th>Indication</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <th>0</th>
-      <td>10 wash</td>
-      <td>NaN</td>
-      <td>NaN</td>
-      <td>2011</td>
-      <td>sulfacetamide</td>
-      <td>Acne vulgaris</td>
-    </tr>
-    <tr>
-      <th>1</th>
-      <td>1st tier unifine pentips</td>
-      <td>471.0</td>
-      <td>7.54586</td>
-      <td>2011</td>
-      <td>NaN</td>
-      <td>NaN</td>
-    </tr>
-    <tr>
-      <th>2</th>
-      <td>1st tier unifine pentips plus</td>
-      <td>NaN</td>
-      <td>NaN</td>
-      <td>2011</td>
-      <td>NaN</td>
-      <td>NaN</td>
-    </tr>
-    <tr>
-      <th>3</th>
-      <td>60pse-400gfn-20dm</td>
-      <td>NaN</td>
-      <td>NaN</td>
-      <td>2011</td>
-      <td>pseudoephedrine</td>
-      <td>Nasal congestion</td>
-    </tr>
-    <tr>
-      <th>4</th>
-      <td>8-mop</td>
-      <td>NaN</td>
-      <td>NaN</td>
-      <td>2011</td>
-      <td>methoxsalen</td>
-      <td>Cutaneous T-cell lymphoma</td>
-    </tr>
-  </tbody>
-</table>
-</div>
-
-
-I also processed the data from the Therapeutic Targets Database, which presents the indications (diseases) associated with a drug generic name. 
-
-Then, I used a fuzzy logic algorithm to match each drug generic name of the Medicare data with the closest element from the Therapeutic Targets Database. After having a list of exact matches, I assigned the first associated indication to each Medicare drug.
+Lets begin by parsing the the 450  intial masks
 
 
 ```python
-diseases = pd.read_csv('data/drug-disease_keys.csv')
-diseases.head()
+mask_files = os.listdir(MASK_PATH)
+# mask_files = [m for m in mask_files if 'mask' in m]
+X = []
+M = []
+for mask_file in mask_files:
+    img = cv2.imread(TRAIN_PATH + mask_file)
+    mask = cv2.imread(MASK_PATH + mask_file, 0)
+    mask[mask>108]= 255
+    mask[mask<=108]= 0
+    X.append(img)
+    M.append(mask)
+
+X = np.array(X)
+M = np.array(M)
+
 ```
 
 
+```python
+img_files = os.listdir(WC_PATH)
 
+WC = []
+for img_file in img_files:
+    img = cv2.imread(WC_PATH + img_file)
+    WC.append(img)
+WC = np.array(WC)
+```
 
-<div>
-<table border="1" class="dataframe">
-  <thead>
-    <tr style="text-align: right;">
-      <th></th>
-      <th>Unnamed: 0</th>
-      <th>TTDDRUGID</th>
-      <th>LNM</th>
-      <th>Indication</th>
-      <th>ICD9</th>
-      <th>ICD10</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <th>0</th>
-      <td>0</td>
-      <td>DAP000001</td>
-      <td>quetiapine</td>
-      <td>Schizophrenia</td>
-      <td>295, 710.0</td>
-      <td>F20, M32</td>
-    </tr>
-    <tr>
-      <th>1</th>
-      <td>1</td>
-      <td>DAP000002</td>
-      <td>theophylline</td>
-      <td>Chronic obstructive pulmonary disease</td>
-      <td>490-492, 494-496</td>
-      <td>J40-J44, J47</td>
-    </tr>
-    <tr>
-      <th>2</th>
-      <td>2</td>
-      <td>DAP000003</td>
-      <td>risperidone</td>
-      <td>Schizophrenia</td>
-      <td>295, 710.0</td>
-      <td>F20, M32</td>
-    </tr>
-    <tr>
-      <th>3</th>
-      <td>3</td>
-      <td>DAP000004</td>
-      <td>dasatinib</td>
-      <td>Chronic myelogenous leukemia</td>
-      <td>205.1, 208.9</td>
-      <td>C91-C95, C92.1</td>
-    </tr>
-    <tr>
-      <th>4</th>
-      <td>4</td>
-      <td>DAP000004</td>
-      <td>dasatinib</td>
-      <td>Solid tumours; Multiple myeloma</td>
-      <td>140-199, 203.0, 210-229</td>
-      <td>C00-C75, C7A, C7B, C90.0, D10-D36, D3A</td>
-    </tr>
-  </tbody>
-</table>
-</div>
+#### Define Data augmentation transformations
 
-
-
-Then, I used a fuzzy logic algorithm to match each drug generic name of the Medicare data with the closest element from the Therapeutic Targets Database. After having a list of exact matches, I assigned the first associated indication to each Medicare drug. For details on how I did this, please check [my github repository](https://github.com/dariodata/medicare-drug-cost/blob/master/data_preparation.ipynb).
-
-# Results
-
-## Figure 1: top indications for total spending in 5-year period
+For data augmentation I use albumentations a libary that has a very simple, flexible APWe that allows the library to be plugged in any computer vision pipeline. The library provides almost any thinkable transformation and was written by Kaggle Masters
 
 
 ```python
-spending = data.groupby('Indication').sum().sort_values(by='Total Spending', ascending=False)
-spending.head()
+from albumentations import (
+    HorizontalFlip, VerticalFlip, IAAPerspective, ShiftScaleRotate, CLAHE, RandomRotate90,
+    Transpose, ShiftScaleRotate, Blur, OpticalDistortion, GridDistortion, HueSaturationValue,
+    IAAAdditiveGaussianNoise, GaussNoise, MotionBlur, MedianBlur, IAAPiecewiseAffine,
+    IAASharpen, IAAEmboss, RandomContrast, RandomBrightness, Flip, OneOf, Compose, RandomGamma, Rotate,IAAAffine
+)
+```
+
+
+```python
+aug_null = Compose([])
+aug = Compose([ 
+    Blur(p=0.5, blur_limit=2),
+    IAAAffine(p=0.5, shear=5),
+    HorizontalFlip(p=0.5),              
+    Rotate(limit=5, p=0.3),
+    RandomContrast(p=0.2, limit=0.1),
+    RandomBrightness(p=0.2, limit=0.1),
+])
+
+```
+
+#### Define Data loader
+
+Besides the data loading procedure, here I defined the backbone of the unet model, I use **seresnet34**. In contrast to conventional resnet34, seresnet34 uses an additional trick called **Squeeze-and-Excitation** which often helps the model generalize extremely well. The (SE) block adaptively recalibrates
+channel-wise feature responses by explicitly modelling interdependencies between channels. For more information take a look a the original [paper](https://arxiv.org/pdf/1709.01507.pdf)
+
+
+
+```python
+model_name = 'seresnet34'
+BACKBONE = model_name
+preprocess_input = sm.get_preprocessing(BACKBONE)
+
+class DataGenerator(keras.utils.Sequence):
+    'Generates data for Keras'
+    def __init__(self, X, M, batch_size=32,
+                 dim=DIMENSION,  shuffle=True, 
+                 preprocess_input=preprocess_input, 
+                 aug=aug_null, min_mask=2 ):
+        'Initialization'
+        self.X = X
+        self.M = M
+        self.batch_size = batch_size
+        self.n_classes = 1
+        self.shuffle = shuffle
+        self.preprocess_input = preprocess_input
+        self.aug = aug
+        self.on_epoch_end()
+        self.dim = dim
+
+    def __len__(self):
+        'Denotes the number of batches per epoch'
+        return int(np.floor((len(self.X) / self.batch_size) / 1) )
+
+    def __getitem__(self, index):
+        'Generate one batch of data'
+        # Generate indexes of the batch
+        
+        end_index = min((index+1)*self.batch_size, len(self.indexes))
+        indexes = self.indexes[index*self.batch_size:(index+1)*self.batch_size]
+
+
+        # Generate data
+        X, Y = self.__data_generation(indexes)
+
+        return X, Y
+
+    def on_epoch_end(self):
+        'Updates indexes after each epoch'
+        self.indexes = np.arange(len(self.X))
+        if self.shuffle == True:
+            np.random.shuffle(self.indexes)
+
+    def __data_generation(self, indexes):
+        'Generates data containing batch_size samples' # X : (n_samples, *dim, n_channels)
+        
+        batch_size = len(indexes)
+        
+        # Initialization
+        XX = np.empty((batch_size, self.dim[1], self.dim[0], 3), dtype='float32')
+        YY = np.empty((batch_size, self.dim[1], self.dim[0], 1), dtype='float32')
+
+        # Generate data
+        for i, ID in enumerate(indexes):
+            # Store sample
+            img = self.X[ID]
+            if img.shape[0] != self.dim[0]:
+                img = cv2.resize(img, self.dim, cv2.INTER_CUBIC)
+            mask = self.M[ID]
+            if mask.shape[0] != self.dim[0]:
+                mask = cv2.resize(mask, self.dim, cv2.INTER_AREA)
+            
+            # Store class
+            augmented = self.aug(image=img, mask=mask)
+            aug_img = augmented['image']
+            aug_mask = augmented['mask']
+            aug_mask = np.expand_dims(aug_mask, axis=-1)
+            aug_mask = aug_mask/255
+            
+            assert (np.max(aug_mask)<= 1.0 and  np.min(aug_mask) >= 0)
+            aug_mask[aug_mask>0.5] = 1
+            aug_mask[aug_mask<0.5] = 0
+            
+            YY[i,] = aug_mask.astype('float32')
+            XX[i,] = aug_img.astype('float32')
+    
+       
+        XX = self.preprocess_input(XX)
+            
+        return XX, YY
+```
+
+I define the default preprocessing for resnet architectures and create train and validation generators (`keras.utils.Sequence`). Note that the data augmentation is only applied on the training generator.
+
+
+```python
+training_generator = DataGenerator(X[:450], M[:450], batch_size=16,  dim=DIMENSION, aug=aug, 
+                                   preprocess_input=preprocess_input)
+valid_genarator = DataGenerator(X[450:], M[450:], batch_size=16, dim=DIMENSION, aug=aug_null, 
+                                preprocess_input=preprocess_input, shuffle=False)
+```
+
+#### Test Data load
+
+
+```python
+x, y= training_generator[7]
+np.max(x), x.shape, y.shape, np.max(y), np.unique(y)
 ```
 
 
 
 
-<div>
-<table border="1" class="dataframe">
-  <thead>
-    <tr style="text-align: right;">
-      <th></th>
-      <th>Claim Count</th>
-      <th>Total Spending</th>
-      <th>Beneficiary Count</th>
-      <th>Total Annual Spending Per User</th>
-      <th>Unit Count</th>
-    </tr>
-    <tr>
-      <th>Indication</th>
-      <th></th>
-      <th></th>
-      <th></th>
-      <th></th>
-      <th></th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <th>Diabetes mellitus</th>
-      <td>367700954.0</td>
-      <td>5.360758e+10</td>
-      <td>73949096.0</td>
-      <td>562815.013217</td>
-      <td>2.494315e+10</td>
-    </tr>
-    <tr>
-      <th>Schizophrenia</th>
-      <td>120108011.0</td>
-      <td>3.029475e+10</td>
-      <td>16787537.0</td>
-      <td>665302.614794</td>
-      <td>5.232045e+09</td>
-    </tr>
-    <tr>
-      <th>Chronic obstructive pulmonary disease</th>
-      <td>85571788.0</td>
-      <td>2.668149e+10</td>
-      <td>18010399.0</td>
-      <td>117832.051227</td>
-      <td>5.169355e+09</td>
-    </tr>
-    <tr>
-      <th>Pain</th>
-      <td>449297282.0</td>
-      <td>2.237135e+10</td>
-      <td>125509481.0</td>
-      <td>635933.153421</td>
-      <td>3.582438e+10</td>
-    </tr>
-    <tr>
-      <th>Hypertension</th>
-      <td>659834372.0</td>
-      <td>2.140793e+10</td>
-      <td>127524840.0</td>
-      <td>453862.885999</td>
-      <td>3.924869e+10</td>
-    </tr>
-  </tbody>
-</table>
-</div>
-<div>
-<table border="1" class="dataframe">
-  <thead>
-    <tr style="text-align: right;">
-      <th></th>
-      <th>Average Cost Per Unit (Weighted)</th>
-      <th>Beneficiary Count No LIS</th>
-      <th>Average Beneficiary Cost Share No LIS</th>
-      <th>Beneficiary Count LIS</th>
-      <th>Average Beneficiary Cost Share LIS</th>
-    </tr>
-    <tr>
-      <th>Indication</th>
-      <th></th>
-      <th></th>
-      <th></th>
-      <th></th>
-      <th></th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <th>Diabetes mellitus</th>
-      <td>7277.339052</td>
-      <td>40704222.0</td>
-      <td>96730.900344</td>
-      <td>33243845.0</td>
-      <td>6840.136642</td>
-    </tr>
-    <tr>
-      <th>Schizophrenia</th>
-      <td>23737.078668</td>
-      <td>4132330.0</td>
-      <td>75431.535074</td>
-      <td>12655011.0</td>
-      <td>2733.240495</td>
-    </tr>
-    <tr>
-      <th>Chronic obstructive pulmonary disease</th>
-      <td>1525.772351</td>
-      <td>8891428.0</td>
-      <td>16115.553801</td>
-      <td>9118941.0</td>
-      <td>953.965398</td>
-    </tr>
-    <tr>
-      <th>Pain</th>
-      <td>8484.565888</td>
-      <td>68195577.0</td>
-      <td>86753.860239</td>
-      <td>57310277.0</td>
-      <td>5810.508368</td>
-    </tr>
-    <tr>
-      <th>Hypertension</th>
-      <td>2875.275230</td>
-      <td>84758076.0</td>
-      <td>99376.738594</td>
-      <td>42766156.0</td>
-      <td>8392.438238</td>
-    </tr>
-  </tbody>
-</table>
-</div>
+    (255.0,
+     (16, 192, 384, 3),
+     (16, 192, 384, 1),
+     1.0,
+     array([0., 1.], dtype=float32))
+
 
 
 
 ```python
-spending_drug = data.groupby('Brand Name').sum().sort_values(by='Total Spending', ascending=False)
-spending_drug.head()
+plt.imshow(y[2, ..., 0])
+plt.show()
 ```
 
 
-
-
-<div>
-<table border="1" class="dataframe">
-  <thead>
-    <tr style="text-align: right;">
-      <th></th>
-      <th>Claim Count</th>
-      <th>Total Spending</th>
-      <th>Beneficiary Count</th>
-      <th>Total Annual Spending Per User</th>
-      <th>Unit Count</th>
-    </tr>
-    <tr>
-      <th>Brand Name</th>
-      <th></th>
-      <th></th>
-      <th></th>
-      <th></th>
-      <th></th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <th>lantus/lantus solostar</th>
-      <td>40959410.0</td>
-      <td>1.419734e+10</td>
-      <td>7627126.0</td>
-      <td>9059.358978</td>
-      <td>7.905816e+08</td>
-    </tr>
-    <tr>
-      <th>nexium</th>
-      <td>37338541.0</td>
-      <td>1.129409e+10</td>
-      <td>6968266.0</td>
-      <td>8159.874433</td>
-      <td>1.624007e+09</td>
-    </tr>
-    <tr>
-      <th>crestor</th>
-      <td>43304032.0</td>
-      <td>1.084924e+10</td>
-      <td>8312848.0</td>
-      <td>6460.499385</td>
-      <td>1.917524e+09</td>
-    </tr>
-    <tr>
-      <th>advair diskus</th>
-      <td>30806126.0</td>
-      <td>1.036056e+10</td>
-      <td>7096159.0</td>
-      <td>7313.316443</td>
-      <td>2.273054e+09</td>
-    </tr>
-    <tr>
-      <th>abilify</th>
-      <td>12506518.0</td>
-      <td>9.434570e+09</td>
-      <td>1861785.0</td>
-      <td>25165.999223</td>
-      <td>3.818410e+08</td>
-    </tr>
-  </tbody>
-</table>
-</div>
-<div>
-<table border="1" class="dataframe">
-  <thead>
-    <tr style="text-align: right;">
-      <th></th>
-      <th>Average Cost Per Unit (Weighted)</th>
-      <th>Beneficiary Count No LIS</th>
-      <th>Average Beneficiary Cost Share No LIS</th>
-      <th>Beneficiary Count LIS</th>
-      <th>Average Beneficiary Cost Share LIS</th>
-    </tr>
-    <tr>
-      <th>Brand Name</th>
-      <th></th>
-      <th></th>
-      <th></th>
-      <th></th>
-      <th></th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <th>lantus/lantus solostar</th>
-      <td>87.058010</td>
-      <td>3685935.0</td>
-      <td>1757.877943</td>
-      <td>3941191.0</td>
-      <td>119.054297</td>
-    </tr>
-    <tr>
-      <th>nexium</th>
-      <td>35.029401</td>
-      <td>2808631.0</td>
-      <td>1282.120804</td>
-      <td>4159635.0</td>
-      <td>108.193170</td>
-    </tr>
-    <tr>
-      <th>crestor</th>
-      <td>27.902605</td>
-      <td>5275631.0</td>
-      <td>1477.330224</td>
-      <td>3037217.0</td>
-      <td>126.576936</td>
-    </tr>
-    <tr>
-      <th>advair diskus</th>
-      <td>22.805665</td>
-      <td>3613170.0</td>
-      <td>1284.084879</td>
-      <td>3482989.0</td>
-      <td>98.586905</td>
-    </tr>
-    <tr>
-      <th>abilify</th>
-      <td>127.685877</td>
-      <td>333884.0</td>
-      <td>2541.346071</td>
-      <td>1527901.0</td>
-      <td>101.829169</td>
-    </tr>
-  </tbody>
-</table>
-</div>
+![png](images/whale-masks_19_0.png)
 
 
 
 ```python
-n_top = 40
-fig, (ax1, ax2) = plt.subplots(ncols=2, sharey=False, figsize=(8,8))
-g = sns.barplot(x='Total Spending', y='Indication', data=spending.reset_index()[:n_top], estimator=np.sum, ax=ax1, 
-                color=sns.xkcd_rgb['dodger blue'])
-g.set(yticklabels=[i[:27] for i in spending[:n_top].index])
-g.set_xlabel('Total Spending $')
-g2 = sns.barplot(x='Total Spending', y='Brand Name', data=spending_drug.reset_index()[:n_top], estimator=np.sum, ax=ax2,
-                 color='lightblue')
-g2.set(yticklabels=[i[:20] for i in spending_drug[:n_top].index])
-g2.set_xlabel('Total Spending $')
-#plt.title('Top 50 indications by Beneficiary Count Sum from 2011 to 2015')
-fig.suptitle('Top %s indications and drugs for 5-year total spending 2011-2015' %n_top, size=16)
+plt.imshow(x[2, ..., 0])
+plt.show()
+```
+
+
+![png](images/whale-masks_20_0.png)
+
+
+
+```python
+from segmentation_models import Unet
+model = Unet(backbone_name=model_name, encoder_weights='imagenet', activation='sigmoid', classes=1)
+```
+
+### U-Net Architecture
+The U-NET architecture consists of two paths: encoder and decoder.
+
+The encoder extracts features which contain information about what is in an image using convolutional and pooling layers.
+
+Whilst encoding the size of the feature map gets reduced. The decoder is then used to recover the feature map size for the segmentation image, for which it uses Up-convolution layers.
+
+Because the decoding process loses some of the higher level features the encoder learned, the U-NET has skip connections. That means that the outputs of the encoding layers are passed directly to the decoding layers so that all the important pieces of information can be preserved.
+
+For more information check out the original [paper](https://arxiv.org/pdf/1505.04597.pdf).
+
+![title](images/u-net-architecture.png)
+
+
+#### Loss for image segmentation: Dice Coefficient
+Simply put, the Dice Coefficient is 2 * the Area of Overlap divided by the total number of pixels in both images.
+
+![title]((images/dice_coeff.png)
+
+-----------------------------------------
+![title](images/dice_coeff2.png)
+
+
+```python
+def dice_coeff_L(y_true, y_pred):
+    smooth = 1.
+    y_pred_sig = tf.nn.sigmoid(y_pred)
+
+    y_true_f = K.flatten(y_true)
+    y_pred_f = K.flatten(y_pred_sig)
+    intersection = K.sum(y_true_f * y_pred_f)
+    score = (2. * intersection + smooth) / (K.sum(y_true_f) + K.sum(y_pred_f) + smooth)
+    return score
+
+def dice_coeff(y_true, y_pred):
+#     ipdb.set_trace()
+    smooth = 1.
+    y_true_f = K.flatten(y_true)
+    y_pred_f = K.flatten(y_pred)
+    intersection = K.sum(y_true_f * y_pred_f)
+    score = (2. * intersection + smooth) / (K.sum(y_true_f) + K.sum(y_pred_f) + smooth)
+    return score
+
+
+def dice_loss(y_true, y_pred):
+    
+    loss = 1 - dice_coeff(y_true, y_pred)
+    return loss
+
+def bce_dice_loss(y_true, y_pred):
+    loss = binary_crossentropy(y_true, y_pred) + dice_loss(y_true, y_pred)
+    return loss
+```
+
+Let's train the model to see what I can get.
+
+
+```python
+training_generator = DataGenerator(X[:400], M[:400], batch_size=16,  dim=DIMENSION, aug=aug, 
+                                   preprocess_input=preprocess_input)
+valid_genarator = DataGenerator(X[400:], M[400:], batch_size=16, dim=DIMENSION, aug=aug_null, 
+                                preprocess_input=preprocess_input, shuffle=False)
+
+model.compile(optimizer=Adam(lr=0.001),
+          loss=bce_dice_loss,
+          metrics=[dice_coeff])
+
+epochs = 40
+
+# Load trained model if exists, otherwise train model
+model_file = Path('fpnseresnet34_384-192_34-0.061-0.976.hdf5')
+if model_file.is_file():
+    model.load_weights(model_file)
+else:
+    early_stopping = EarlyStopping(patience=10, verbose=1, monitor='val_dice_coeff', mode='max')
+    model_checkpoint = ModelCheckpoint("fpnseresnet34_384-192_{epoch:02d}-{val_loss:.3f}-{val_dice_coeff:.3f}.hdf5", 
+                                       save_best_only=True, 
+                                       save_weights_only=True, 
+                                       monitor='val_dice_coeff', verbose=1, mode='max', period=2)
+    reduce_lr = ReduceLROnPlateau(factor=0.5, patience=5, min_lr=0.000001, verbose=1, monitor='val_dice_coeff', mode='max')
+
+
+    history = model.fit_generator( training_generator,
+                                 validation_data=valid_genarator,
+                                 epochs=epochs,
+                                 callbacks=[ reduce_lr, early_stopping, model_checkpoint], 
+                                 verbose=1)
+```
+
+Lets now define the `TestDataGenerator` class that also extends `keras.utils.Sequence` but ignores masks. This generator will be used for inference. 
+
+
+```python
+aug_null = Compose([])
+
+
+class TestDataGenerator(keras.utils.Sequence):
+    'Generates data for Keras'
+    def __init__(self, X, batch_size=32,
+                 dim=(299,299),  shuffle=True, 
+                 preprocess_input=preprocess_input, 
+                 aug=aug_null, min_mask=2 ):
+        'Initialization'
+        self.X = X
+        self.batch_size = batch_size
+        self.n_classes = 1
+        self.shuffle = shuffle
+        self.preprocess_input = preprocess_input
+        self.aug = aug
+        self.dim = dim
+        self.on_epoch_end()
+
+    def set_aug(self, aug):
+        self.aug = aug
+        self.on_epoch_end()
+      
+    def __len__(self):
+        'Denotes the number of batches per epoch'
+        return int(np.floor((len(self.X) / self.batch_size) / 1) )
+
+    def __getitem__(self, index):
+        'Generate one batch of data'
+        # Generate indexes of the batch
+        
+        end_index = min((index+1)*self.batch_size, len(self.indexes))
+        indexes = self.indexes[index*self.batch_size:(index+1)*self.batch_size]
+
+        # Find list of IDs
+
+        # Generate data
+        xx = self.__data_generation(indexes)
+
+        return xx
+
+    def on_epoch_end(self):
+        'Updates indexes after each epoch'
+        self.indexes = np.arange(len(self.X))
+        if self.shuffle == True:
+            np.random.shuffle(self.indexes)
+
+    def __data_generation(self, indexes):
+        'Generates data containing batch_size samples' # X : (n_samples, *dim, n_channels)
+        
+        batch_size = len(indexes)
+        
+        # Initialization
+        XX = np.empty((batch_size, self.dim[1], self.dim[0], 3), dtype='float32')
+
+        # Generate data
+        for i, ID in enumerate(indexes):
+            # Store sample
+            img = self.X[ID]
+            if img.shape[0] != self.dim[0]:
+                img = cv2.resize(img, self.dim, cv2.INTER_CUBIC)
+            
+            
+            # Store class
+            augmented = self.aug(image=img)
+            aug_img = augmented['image']
+            if aug_img.shape[1] != self.dim[1]:
+                aug_img = cv2.resize(aug_img, self.dim, cv2.INTER_CUBIC)
+            XX[i,] = aug_img.astype('float32')
+    
+       
+        XX = self.preprocess_input(XX)
+
+        return XX
+```
+
+### Make Predicitions on GDSC dataset
+
+I use Test-time augmentation (TTA) which applies also data augmentation to the test dataset and by averaging predictions, I achieve a little bit more robust masks.
+
+
+```python
+null_aug = Compose([])
+test_generator = TestDataGenerator(WC, batch_size=16, aug=null_aug, preprocess_input=preprocess_input, dim=DIMENSION, 
+                               shuffle=False)
+preds = model.predict_generator(test_generator, verbose=1)
+
+flip_aug = Compose([HorizontalFlip(p=1.0) ])
+test_generator = TestDataGenerator(WC, batch_size=16, aug=flip_aug, preprocess_input=preprocess_input,  dim=DIMENSION, shuffle=False)
+preds_hflip = model.predict_generator(test_generator, verbose=1)
+
+blur_aug = Compose([Blur(p=1.0)])
+test_generator = TestDataGenerator(WC, batch_size=16, aug=blur_aug, preprocess_input=preprocess_input,  dim=DIMENSION, shuffle=False)
+preds_blur = model.predict_generator(test_generator, verbose=1)
+
+```
+
+    WARNING:tensorflow:From <ipython-input-35-756d55b3dd04>:4: Model.predict_generator (from tensorflow.python.keras.engine.training) is deprecated and will be removed in a future version.
+    Instructions for updating:
+    Please use Model.predict, which supports generators.
+    334/334 [==============================] - 141s 423ms/step
+    334/334 [==============================] - 127s 379ms/step
+    334/334 [==============================] - 125s 373ms/step
+    
+
+
+```python
+TARGET_VAL = []
+for i in range(len(preds)):
+    pp = (preds[i] + np.fliplr(preds_hflip[i]) + preds_blur[i])/3
+    TARGET_VAL.append(pp)
+
+TARGET_VAL = np.array(TARGET_VAL)  
+```
+
+
+```python
+from skimage.morphology import label
+
+fig = plt.figure()
+
+ax1 = fig.add_subplot(221)
+ax1.imshow(WC[3])
+
+ax2 = fig.add_subplot(222)
+ax2.imshow(cv2.resize(WC[3], DIMENSION))
+
+ax3 = fig.add_subplot(223)
+ax3.imshow(TARGET_VAL[3][:,:, 0])
+
+x = TARGET_VAL[3]
+x = label(x > .5)
+ax4 = fig.add_subplot(224)
+ax4.imshow(x[:, :, 0])
+
+
+ax1.title.set_text('original')
+ax2.title.set_text('resized')
+ax3.title.set_text('mask')
+ax4.title.set_text('mask threshold .5')
 plt.tight_layout()
-fig.subplots_adjust(top=0.94)
-plt.savefig('Top_%s_disease_drug.png' %n_top, dpi=300, bbox_inches='tight')
+plt.show()
 ```
 
 
-![png](/images/medicare-drug-cost_9_0.png)
+![png](/images/whale-masks_32_0.png)
 
 
-### Indications (left part)
+### Make Predicitions on Kaggle Dataset
 
-A look at the total spending for the 5-year period 2011-2015 reveals that the bulk of drug spending is covered by a 
-small set of diseases/indications (left graph). The total spending per indication decreases rapidly by going down the 
-list of drugs.
+When we want to use the whale flukes provided by Kaggle for pretraining, we should also create masks on this dataset.
 
-Diabetes occupies the first place in this list with a total 5-year spending exceding $50 billion. Following in the 
-list, we find other chronic diseases such as schizophrenia, chronic obstructive pulmonary disease, hypertension (high
- blood pressure), hypercholesterolemia (high cholesterol), depression, hiv infections, multiple sclerosis, peptic 
- ulcer disease, and chronic HCV infection (hepatitis C). Interestingly, pain medications are also in the top 4 
- indications by total spending.
- 
-It makes sense that treatment of chronic diseases receives the highest investment in drug spending, as patients with 
-these diseases can live long lives when medicated.
-
-Interestingly, the first cancer reaches only the 19th place of this list (chronic myelogenous leukemia). However, it 
-must be noted that _cancer is actually a collection of different diseases_ with different genetics, origin, and 
-treatment options. These different cancers were not clustered in this analysis.
-
-### Drugs (right part)
-
-When we look at the most expensive drugs for the total 5-year spending, we find on the top of the list: Lantus 
-(insulin), nexium (peptic ulcer), and crestor(anti cholesterol). It makes sense as these are medicines to treat chronic 
-diseases.
-
-However, we cannot learn much on a high level from looking at the total spending only. Therefore, a closer look is 
-needed.
-
-
-## Figure 2: top drug cost development 2011-2015 and top indications 2015
+The nice side effect from segmenting the whale flukes is that I can get tight bounding boxes as well. In the figure bellow I keep a tight bounding box and only pixels that correspond to the mask. There are several ways to move from here:
+#### Draw masked flukes on white background
 
 
 ```python
-spend_2015_ind = data[data['Year']==2015].groupby('Indication').sum().sort_values(by='Total Spending', ascending=False)
-#spend_2015_drug = data[data['Year']==2015].groupby('Brand Name').sum().sort_values(by='Total Spending', 
-# ascending=False)
-spend_2015_ind.head()
+SIZE = 384
+f, axarr = plt.subplots(6, 6)
+f.set_figwidth(20)
+f.set_figheight(15)
+kernel = np.ones((3,3),np.uint8)
+
+for i in range(0, 36):
+    img =  cv2.resize(WC[i], DIMENSION)
+    mask = ((TARGET_VAL[i, ..., 0]) > 0.25).astype('uint8')
+    if mask.max()==0:
+        axarr[int(i/6), i%6].imshow(img, cmap='gray')
+        axarr[int(i/6), i%6].axis('off')
+        continue
+    back = ((TARGET_VAL[i, ..., 0]) <= 0.25).astype('uint8')
+
+    img = np.stack([img[..., j] * mask + back*255 for j in range(3)], axis=-1)
+    
+    contours,hierarchy = cv2.findContours(mask, 1, 2)
+  # Cycle through contours and add area to array
+    areas = []
+    for c in contours:
+        areas.append(cv2.contourArea(c))
+
+    # Sort array of areas by size
+    sorted_areas = sorted(zip(areas, contours), key=lambda x: x[0], reverse=True)
+    title = str(len(sorted_areas)) 
+    
+    cnt = sorted_areas[0][1]
+    x1,y1,w,h = cv2.boundingRect(cnt)
+    x2 = x1 + w
+    y2 = y1 + h
+    
+    for j in range(1, len(sorted_areas)):
+        cnt = sorted_areas[j][1]
+        tx1,ty1,tw,th = cv2.boundingRect(cnt)
+        tx2 = tx1 + tw
+        ty2 = ty1 + th
+        x1 = min(x1, tx1)
+        y1 = min(y1, ty1)
+        x2 = max(x2, tx2)
+        y2 = max(y2, ty2)
+    
+    x = x1
+    y = y1
+    w = x2-x1
+    h = y2-y1
+
+
+    img_cropped = img[y:y+h, x:x+w]
+    axarr[int(i/6), i%6].imshow(img_cropped, cmap='gray')
+    axarr[int(i/6), i%6].axis('off')
+plt.show()
 ```
 
 
-
-
-<div>
-<table border="1" class="dataframe">
-  <thead>
-    <tr style="text-align: right;">
-      <th></th>
-      <th>Claim Count</th>
-      <th>Total Spending</th>
-      <th>Beneficiary Count</th>
-      <th>Total Annual Spending Per User</th>
-      <th>Unit Count</th>
-    </tr>
-    <tr>
-      <th>Indication</th>
-      <th></th>
-      <th></th>
-      <th></th>
-      <th></th>
-      <th></th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <th>Diabetes mellitus</th>
-      <td>80808515.0</td>
-      <td>1.538882e+10</td>
-      <td>16756712.0</td>
-      <td>179199.546237</td>
-      <td>5.861327e+09</td>
-    </tr>
-    <tr>
-      <th>Chronic HCV infection</th>
-      <td>272915.0</td>
-      <td>8.349020e+09</td>
-      <td>90487.0</td>
-      <td>182144.098903</td>
-      <td>7.546096e+06</td>
-    </tr>
-    <tr>
-      <th>Chronic obstructive pulmonary disease</th>
-      <td>17764181.0</td>
-      <td>6.756824e+09</td>
-      <td>3803356.0</td>
-      <td>30714.837787</td>
-      <td>1.067257e+09</td>
-    </tr>
-    <tr>
-      <th>Schizophrenia</th>
-      <td>25030047.0</td>
-      <td>5.468897e+09</td>
-      <td>3493417.0</td>
-      <td>192134.968549</td>
-      <td>1.084651e+09</td>
-    </tr>
-    <tr>
-      <th>Pain</th>
-      <td>94109025.0</td>
-      <td>4.956161e+09</td>
-      <td>27047833.0</td>
-      <td>164077.757502</td>
-      <td>7.597111e+09</td>
-    </tr>
-  </tbody>
-</table>
-</div>
-<div>
-<table border="1" class="dataframe">
-  <thead>
-    <tr style="text-align: right;">
-      <th></th>
-      <th>Average Cost Per Unit (Weighted)</th>
-      <th>Beneficiary Count No LIS</th>
-      <th>Average Beneficiary Cost Share No LIS</th>
-      <th>Beneficiary Count LIS</th>
-      <th>Average Beneficiary Cost Share LIS</th>
-    </tr>
-    <tr>
-      <th>Indication</th>
-      <th></th>
-      <th></th>
-      <th></th>
-      <th></th>
-      <th></th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <th>Diabetes mellitus</th>
-      <td>2112.287818</td>
-      <td>9688833.0</td>
-      <td>24716.663299</td>
-      <td>7067683.0</td>
-      <td>1459.860044</td>
-    </tr>
-    <tr>
-      <th>Chronic HCV infection</th>
-      <td>2134.680173</td>
-      <td>30454.0</td>
-      <td>10701.886971</td>
-      <td>60033.0</td>
-      <td>156.351475</td>
-    </tr>
-    <tr>
-      <th>Chronic obstructive pulmonary disease</th>
-      <td>561.945076</td>
-      <td>1931374.0</td>
-      <td>4177.371552</td>
-      <td>1871982.0</td>
-      <td>232.217985</td>
-    </tr>
-    <tr>
-      <th>Schizophrenia</th>
-      <td>8292.122415</td>
-      <td>938911.0</td>
-      <td>19320.941152</td>
-      <td>2554333.0</td>
-      <td>573.729378</td>
-    </tr>
-    <tr>
-      <th>Pain</th>
-      <td>4357.883695</td>
-      <td>15366894.0</td>
-      <td>19810.346154</td>
-      <td>11680708.0</td>
-      <td>1105.913592</td>
-    </tr>
-  </tbody>
-</table>
-</div>
-
+![png](images/whale-masks_36_0.png)
 
 
 
 ```python
-top_10_spend = data[data['Year']==2015].sort_values(by='Total Spending', ascending=False)[['Brand Name', 
-                                                                                           'Total Spending', 
-                                                                                           'Year']][:10]
-top_10_spend
+
 ```
-
-
-
-
-<div>
-<table border="1" class="dataframe">
-  <thead>
-    <tr style="text-align: right;">
-      <th></th>
-      <th>Brand Name</th>
-      <th>Total Spending</th>
-      <th>Year</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <th>19770</th>
-      <td>harvoni</td>
-      <td>7.030633e+09</td>
-      <td>2015</td>
-    </tr>
-    <tr>
-      <th>20104</th>
-      <td>lantus/lantus solostar</td>
-      <td>4.359504e+09</td>
-      <td>2015</td>
-    </tr>
-    <tr>
-      <th>18926</th>
-      <td>crestor</td>
-      <td>2.883122e+09</td>
-      <td>2015</td>
-    </tr>
-    <tr>
-      <th>18069</th>
-      <td>advair diskus</td>
-      <td>2.270016e+09</td>
-      <td>2015</td>
-    </tr>
-    <tr>
-      <th>21640</th>
-      <td>spiriva</td>
-      <td>2.191466e+09</td>
-      <td>2015</td>
-    </tr>
-    <tr>
-      <th>19988</th>
-      <td>januvia</td>
-      <td>2.131952e+09</td>
-      <td>2015</td>
-    </tr>
-    <tr>
-      <th>21404</th>
-      <td>revlimid</td>
-      <td>2.077425e+09</td>
-      <td>2015</td>
-    </tr>
-    <tr>
-      <th>20658</th>
-      <td>nexium</td>
-      <td>2.012921e+09</td>
-      <td>2015</td>
-    </tr>
-    <tr>
-      <th>20291</th>
-      <td>lyrica</td>
-      <td>1.766474e+09</td>
-      <td>2015</td>
-    </tr>
-    <tr>
-      <th>19818</th>
-      <td>humira/humira pen</td>
-      <td>1.662292e+09</td>
-      <td>2015</td>
-    </tr>
-  </tbody>
-</table>
-</div>
-
-
-
-
-```python
-fig, (ax1, ax2) = plt.subplots(ncols=2, sharey=False, figsize=(8,5))
-
-g=sns.factorplot(x='Year', y='Total Spending', hue='Brand Name', palette='coolwarm', 
-                 hue_order=top_10_spend['Brand Name'],
-                 data=data[data['Brand Name'].isin(top_10_spend['Brand Name'])], ax=ax1)
-ax1.set_title('Annual spending for top 10 drugs')
-ax1.set_ylabel('Total Spending $')
-plt.close(g.fig)
-
-ax2.scatter(x=spend_2015_ind['Beneficiary Count'][:100], 
-            y=spend_2015_ind['Total Spending'][:100],
-            s=spend_2015_ind['Claim Count'][:100]/100000,
-            #c=spend_2015_ind.reset_index()['Indication'][:100])
-            color=sns.xkcd_rgb['dodger blue'], alpha=0.75)
-ax2.set_title('Top 100 indications in 2015')
-plt.xlabel('Beneficiary Count')
-plt.ylabel('Total Spending $')
-plt.axis([0, None, 0, None])
-for label, x, y in zip(spend_2015_ind.index, 
-                       spend_2015_ind['Beneficiary Count'][:10], 
-                       spend_2015_ind['Total Spending'][:10]):
-    plt.annotate(label, xy=(x, y), color='red', alpha=0.75)
-fig.suptitle('Annual drug spending development and overview of highest-cost indications', size=16)
-plt.tight_layout()
-fig.subplots_adjust(top=0.85)
-plt.savefig('Top_bubble_disease_drug.png', dpi=300, bbox_inches='tight')
-```
-
-
-![png](/images/medicare-drug-cost_14_0.png)
-
-
-### Annual spending development for top 10 drugs (left)
-
-The drug landscape is not temporally static. Therefore, I analyzed the annual spending since 2011 for the 10 top drugs
- in 2015. Eight out of these ten drugs consistently received higher spending every year, a reflection of the general 
- health care spending panorama. However, the rate of growth for each drug is dramatically different. Particularly 
- striking is the case of the drug Harvoni, which exhibited a >7-fold growth in total spending between 2014 and 2015.
- 
-Harvoni is a medicine for the treatment of hepatitis C (HCV infection) that was launched in 2014. It is the first 
-drug with _cure_ rates close to 100%. Harvoni practically cures a chronic disease and this is reflected in its 
-pricing at over $90k for a 12 week treatment.
-
-The remaining drugs in the figure are mostly used for the _treatment_ of chronic diseases.
-
-But how can we more extensively evaluate the burden posed by the different diseases/indications?
-
-### Top 100 indications in 2015 (right)
-
-In order to find out more about the distribution of the most expensive indications, I plotted the drug spendings 
-grouped by indication for the year 2015 in a scatter plot. This way, we can not only look at the total spending but 
-also at the number of beneficiaries for a particular indication. The size of the bubbles represents the relative number
- of claims. 
- 
- From this graph we can assess the magnitude of how the most expensive diseases affect society. Diabetes is not only 
- the most expensive single indication by total spending but also affects a very large number of people.
- 
- The indications with the most beneficiaries are hypertension, pain and high cholesterol. They also represent some of 
- the highest number of claims (bubble size). This indicates that the average cost associated with each claim is low, 
- as these are generally medications with expired patents that are priced very low.
- 
-Again it is interesting to take a look at chronic HCV infection. This is the indication for the drug Harvoni. Both 
-the number of beneficiaries and claims are extremely low compared with other diseases. However, chronic HCV infection
- reached the second place in the highes total drug spending in 2015.
-
-# Next steps
-
-I have shown in this analysis that very interesting insights can be gained from analyzing a smaller set of publicly 
-available data. It follows that a more detailed and deeper analysis could enable more targeted conclusions and 
-recommendations for improving the health care system and the quality of life of patients suffering from disease.  
-Access to non-public owned data would make even deeper analysis possible.
-
-Additional analysis could include:
-
-- Clustering of diseases/indications to higher-level categories (cancer, metabolic disease, circulatory disease, 
-nervous system disease, etc.)
-- Linking of price databases to compare drug costs for the same indication on a population level
-- Analysis of population data registers that document life style characteristics of healthy and ill individuals to 
-identify those at risk of developing high-cost diseases (e.g.
- [Medical Expenditure Panel Survey](https://meps.ahrq.gov/mepsweb/data_stats/download_data_files_detail.jsp?cboPufNumber=HC-170), 
- [Behavioral Risk Factor Surveillance System data](https://www.cdc.gov/brfss/annual_data/annual_2015.html)) 
-
-
-# Limitations
-
-One limitation from this analysis is that only Part D drugs were considered. A further analysis could include Part B drugs too.
-
-Moreover it was assumed that the fuzzy logic matching was successful in most cases. A more detailed test is required 
-to assess match success more stringently.
-
-All conclusions are only valid for the 2011-2015 interval. No data for 2016 was analyzed.
-
