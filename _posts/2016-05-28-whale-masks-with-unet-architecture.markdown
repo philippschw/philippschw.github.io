@@ -1,9 +1,9 @@
 ---
 layout: post
 title:  "Whale Masks with Unet Architecture"
-date:   2016-05-28 12:00:00 +0100
+date:   2020-05-22 12:00:00 +0100
 author: Philipp Schwarz
-categories: masking, image_segmentation computer_vision
+categories: masking image_segmentation computer_vision
 ---
 The goal of this notebook is to show how to generate very good masks for the fluke of sperm whale based on only 450 annotated humpback flukes.
 

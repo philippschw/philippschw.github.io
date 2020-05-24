@@ -12,7 +12,8 @@ permalink: /:categories/:title/
 
 plainwhite:
   name: Philipp Schwarz
-  tagline: Data Scientist
+  tagline: Quant & Data Scientist
+  analytics_id: "UA-167457440-1"
   date_format: "%b %-d, %Y"
   dark_mode: true
 
