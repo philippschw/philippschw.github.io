@@ -5,17 +5,14 @@ date:   2020-05-22 12:00:00 +0100
 author: Philipp Schwarz
 categories: masking image_segmentation computer_vision
 ---
-The goal of this notebook is to show how to generate very good masks for the fluke of sperm whale based on only 450 annotated humpback flukes.
+This blogpost presents a part of my team's solution for achieving 2 place in Capgemini’s annual [Global Data Science Challenge (GDSC)](https://www.capgemini.com/news/capgemini-uses-ai-to-help-identify-and-track-sperm-whale-population/). Similiar to the Kaggle competition on [Humpback Whale Identification](https://www.kaggle.com/c/humpback-whale-identification). The goal was to identify, whether a given photo of the whale fluke belongs to one of the thousand known individuals of whales, or it is a new_whale, never observed before. The core difference was that this time it was not the humpback whale flukes but the sperm whale. Identifying matches of the individual whales, helps scientists to track migration routes, look at the social structure of the sperm whale groups, and protect the whales’ natural habitats.
 
-## What are masks?
+## Image Segmentation of the whale fluke from the background (ocean and sky)
 
-[Data source](https://storage.googleapis.com/kaggle-forum-message-attachments/459392/11072/masks.zip)
+This blogpost presents a part of my team's solution for achieving 2 place in Capgemini’s annual [Global Data Science Challenge (GDSC)](https://www.capgemini.com/news/capgemini-uses-ai-to-help-identify-and-track-sperm-whale-population/). Similiar to the Kaggle competition on [Humpback Whale Identification](https://www.kaggle.com/c/humpback-whale-identification). The goal was to identify, whether a given photo of the whale fluke belongs to one of the thousand known individuals of whales, or it is a new_whale, never observed before. The core difference was that this time it was not the humpback whale flukes but the sperm whale. Identifying matches of the individual whales, helps scientists to track migration routes, look at the social structure of the sperm whale groups, and protect the whales’ natural habitats.
 
-Packages used:
-- tensorflow, segmentation_models, albumentations
+In the following, I'll explain how we trained a model that can generate image segmentation masks of the whale's fluke. We used these masks as additional input to our main model and achieved a significant performance boost. For this image segmentation task, I will describe the model architecture - U-NET and the data augmentation used to mitigate overfitting.
 
-This kernel shows how to generate very good masks for the fluke of the whale based on only 450 annotated fluke masks.
-For this image segmentation task, I will describe the model architecture - U-NET and the data augmentation I used to mitigate overfitting.
 The 450 fluke masks were provided by  Dene originally for the [Humpback Whale Identification Challenge on Kaggle](https://www.kaggle.com/c/whale-categorization-playground) and can be downloaded [here](https://storage.googleapis.com/kaggle-forum-message-attachments/459392/11072/masks.zip). 
 Segmenting the fluke and adding it as information in a fourth channel, significantly improved our score on the whale identification challenge. By adding it as a seperate channel the metric learning model can learn to recognize the fluke based on the characteristic contours of the fluke without loosing other potentially valuable information such as the background information of the sea.
 
@@ -267,7 +264,7 @@ plt.show()
 ```
 
 
-![png](images/whale-masks_19_0.png)
+![png](../images/whale-masks_19_0.png)
 
 
 
@@ -277,7 +274,7 @@ plt.show()
 ```
 
 
-![png](images/whale-masks_20_0.png)
+![png](../images/whale-masks_20_0.png)
 
 
 
@@ -297,16 +294,16 @@ Because the decoding process loses some of the higher level features the encoder
 
 For more information check out the original [paper](https://arxiv.org/pdf/1505.04597.pdf).
 
-![title](images/u-net-architecture.png)
+![title](../images/u-net-architecture.png)
 
 
 #### Loss for image segmentation: Dice Coefficient
 Simply put, the Dice Coefficient is 2 * the Area of Overlap divided by the total number of pixels in both images.
 
-![title]((images/dice_coeff.png)
+![title]((../images/dice_coeff.png)
 
 -----------------------------------------
-![title](images/dice_coeff2.png)
+![title](../images/dice_coeff2.png)
 
 
 ```python
@@ -524,7 +521,7 @@ plt.show()
 ```
 
 
-![png](/images/whale-masks_32_0.png)
+![png](../images/whale-masks_32_0.png)
 
 
 ### Make Predicitions on Kaggle Dataset
@@ -591,7 +588,7 @@ plt.show()
 ```
 
 
-![png](images/whale-masks_36_0.png)
+![png](../images/whale-masks_36_0.png)
 
 
 
