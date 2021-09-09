@@ -12,7 +12,7 @@ permalink: /:categories/:title/
 
 plainwhite:
   name: Philipp Schwarz
-  tagline: Senior Data Scientist - Focus on Computer Vision
+  tagline: Senior Data Scientist
   analytics_id: "UA-167457440-1"
   date_format: "%b %-d, %Y"
 
