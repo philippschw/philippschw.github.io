@@ -165,7 +165,7 @@ for patient, df in list(train.groupby('Patient')):
     plot_fvc(df, patient)
     
 ```
-![png](/images/FVCdecline.png)
+![png](/images/FCVdecline.png)
 
 ## 2 Naive / non-hierarchical model¶
 
@@ -280,16 +280,7 @@ Here, we will use the middle ground: **Partial pooling**. Specifically, we will 
 <img src="https://i.ibb.co/H7NgBfR/Artboard-2-2x-100.jpg" alt="drawing" width="600"/>
 
 Mathematically, the model is described by the following equations:
-$$
-\mu_{\alpha} \sim \mathcal{N}(1700, 400) \\
-\sigma_{\alpha} \sim |\mathcal{N}(0, 1000)| \\
-\mu_{\beta} \sim \mathcal{N}(-4, 1) \\
-\sigma_{\beta} \sim |\mathcal{N}(0, 5)| \\
-\alpha_i \sim \mathcal{N}(\mu_{\alpha}, \sigma_{\alpha}) \\
-\beta_i \sim \mathcal{N}(\mu_{\beta}, \sigma_{\beta}) \\
-\sigma \sim |\mathcal{N}(0, 150)| \\
-FVC_{ij} \sim \mathcal{N}(\alpha_i + t \beta_i, \sigma)
-$$
+![png](/images/eq.png)
 
 where *t* is the time in weeks. You might ask why we have chosen these specific priors. We did some iterations, at first with pretty vague/uninformative priors. After observing the first results, we converged to these distributions described above. Although PyMC3 samplers can work pretty well with uninformative priors, other PPLs such as Pyro requires more specific priors (otherwise their samplers take a really long time to converge).
 
@@ -368,7 +359,7 @@ First, let's inspect the parameters learned:
 with model_a:
     pm.plot_trace(trace_a);
 ```
-![png](/images/runs2.png)
+![png](/images/run2.png)
 
 Great! It looks like our model learned different $\alpha$'s and $\beta$'s for each patient, pooled from the same source distribution.
 
@@ -439,7 +430,7 @@ chart('ID00419637202311204720264', axes[1, 0])
 chart('ID00421637202311550012437', axes[1, 1])
 chart('ID00422637202311677017371', axes[1, 2])
 ```
-![png](/images/results2.png)
+![png](/images/result2.png)
 
 The results are exactly what we expected to see! Highlight observations:
 - The model adequately learned Bayesian Linear Regressions! The orange line (learned predicted FVC mean) is very inline with the red line (deterministic linear regression). But most important: it learned to predict uncertainty, showed in the light orange region (one sigma above and below the mean FVC line)
@@ -502,9 +493,7 @@ And that's all there is to it.
 ## 7. Model B: Hierarchical Model with Partial Pooling using more tabular data
 The model is essentially the same as model A. There is, though, a slight change. The equation that predicts the FVC is changed to:
 
-$$
-FVC_{ij} \sim \mathcal{N}(\alpha_i + X_{ij} \beta_i, \sigma)
-$$
+![png](/images/modelB_eq.png)
 
 
 Now, multiplying $\beta_i$ we have $X_{ij}$ instead of *t*. $X_{ij}$ is a vector of the patient *i* at timestep *j* that contains:
@@ -572,7 +561,7 @@ First, let's inspect the parameters learned:
 with model_b:
     pm.plot_trace(trace_b);
 ```
-![png](/images/runs3.png)
+![png](/images/run3.png)
 
 Great! Again, it looks like our model learned different $\alpha$'s and $\beta$'s for each patient, pooled from the same source distribution. Note: this model is unstable, and sometimes do not converge.
 
@@ -646,7 +635,7 @@ chart('ID00419637202311204720264', axes[1, 0])
 chart('ID00421637202311550012437', axes[1, 1])
 chart('ID00422637202311677017371', axes[1, 2])
 ```
-![png](/images/results3.png)
+![png](/images/result3.png)
 
 
 It looks like Model B generates the same results as Model A. Note: this model is unstable, and sometimes do not converge.
