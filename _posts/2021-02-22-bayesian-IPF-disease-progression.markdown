@@ -8,8 +8,6 @@ categories: bayesian probabilistic programming
 
 I am currently reading [Probabilistic Programming & Bayesian Methods for Hackers](http://camdavidsonpilon.github.io/Probabilistic-Programming-and-Bayesian-Methods-for-Hackers/), to upskill myself on Bayesian experiments. After going through the authors examples, I was curious to try it on a dataset and problem I was already familiar with: *predicting IPF disease progression*, considering the uncertainty of the preditions.
 
-# Bayesian Modelling of IPF disease progression
-
 The [OSIC Pulmonary Fibrosis Progression, 2020](https://www.kaggle.com/c/osic-pulmonary-fibrosis-progression/overview) challenged kagglers to predict lung function decline by using AI and machine learning.
 The problem seem to lend iself to a Bayesian approach, because for each FVC measurement also a confidence measure for the prediction was asked.
 
@@ -68,6 +66,7 @@ plt.suptitle("Bayesian updating of posterior probabilities",
 
 plt.tight_layout()
 ```
+![png](/images/coinflipping.png)
 
 ## Bayesian and Frequentist Linear Regression 
 
@@ -117,8 +116,6 @@ train = pd.concat([train, test], axis=0, ignore_index=True)\
 
 le_id = LabelEncoder()
 train['PatientID'] = le_id.fit_transform(train['Patient'])
-
-train.head()
 ```
 
 And for now, that's all there is to data pre-processing! We can again just inspect the FVC declines:
@@ -128,6 +125,7 @@ And for now, that's all there is to data pre-processing! We can again just inspe
 fig, axes = plt.subplots(ncols=1, figsize=(18, 6), dpi=150)
 sns.distplot(train['FVC'], label='FVC', ax=axes);
 ```
+![png](/images/FVC.png)
 
 
 ```python
@@ -167,6 +165,7 @@ for patient, df in list(train.groupby('Patient')):
     plot_fvc(df, patient)
     
 ```
+![png](/images/FVCdecline.png)
 
 ## 2 Naive / non-hierarchical model¶
 
@@ -206,6 +205,7 @@ with unpooled_model:
 with unpooled_model:
     pm.plot_trace(trace_unpooled_model);
 ```
+![png](/images/runs1.png)
 
 
 ```python
@@ -227,11 +227,6 @@ with unpooled_model:
         "FVC_obs_shared": np.zeros(len(pred_template)).astype(int),
     })
     post_pred = pm.sample_posterior_predictive(trace_unpooled_model)
-```
-
-
-```python
-df.shape
 ```
 
 
@@ -270,6 +265,7 @@ chart('ID00419637202311204720264', axes[1, 0])
 chart('ID00421637202311550012437', axes[1, 1])
 chart('ID00422637202311677017371', axes[1, 2])
 ```
+![png](/images/result1.png)
 
 ## 3. Model A: Bayesian Hierarchical Linear Regression with Partial Pooling
 
@@ -362,6 +358,7 @@ with model_a:
     trace_a = pm.sample(2000, tune=2000, target_accept=.9, init="adapt_diag")
 ```
 
+
 ## 5. Checking model A
 ### 5.1. Inspecting the learned parameters
 First, let's inspect the parameters learned:
@@ -371,6 +368,7 @@ First, let's inspect the parameters learned:
 with model_a:
     pm.plot_trace(trace_a);
 ```
+![png](/images/runs2.png)
 
 Great! It looks like our model learned different $\alpha$'s and $\beta$'s for each patient, pooled from the same source distribution.
 
@@ -441,6 +439,7 @@ chart('ID00419637202311204720264', axes[1, 0])
 chart('ID00421637202311550012437', axes[1, 1])
 chart('ID00422637202311677017371', axes[1, 2])
 ```
+![png](/images/results2.png)
 
 The results are exactly what we expected to see! Highlight observations:
 - The model adequately learned Bayesian Linear Regressions! The orange line (learned predicted FVC mean) is very inline with the red line (deterministic linear regression). But most important: it learned to predict uncertainty, showed in the light orange region (one sigma above and below the mean FVC line)
@@ -496,8 +495,6 @@ train['CurrentlySmokes'] = aux['CurrentlySmokes']
 aux = train[['Patient', 'Weeks']].sort_values(by=['Patient', 'Weeks'])
 aux = train.groupby('Patient').head(1)
 train = pd.merge(train, aux[['Patient']], how='left', on='Patient')
-
-train.head()
 ```
 
 And that's all there is to it.
@@ -575,6 +572,7 @@ First, let's inspect the parameters learned:
 with model_b:
     pm.plot_trace(trace_b);
 ```
+![png](/images/runs3.png)
 
 Great! Again, it looks like our model learned different $\alpha$'s and $\beta$'s for each patient, pooled from the same source distribution. Note: this model is unstable, and sometimes do not converge.
 
@@ -648,6 +646,8 @@ chart('ID00419637202311204720264', axes[1, 0])
 chart('ID00421637202311550012437', axes[1, 1])
 chart('ID00422637202311677017371', axes[1, 2])
 ```
+![png](/images/results3.png)
+
 
 It looks like Model B generates the same results as Model A. Note: this model is unstable, and sometimes do not converge.
 
@@ -776,11 +776,4 @@ df['FVC'] = post_pred['FVC_like'].T.mean(axis=1)
 df['Confidence'] = post_pred['FVC_like'].T.std(axis=1)
 final = df[['Patient_Week', 'FVC', 'Confidence']]
 final.to_csv('submission.csv', index=False)
-print(final.shape)
-final.head()
-```
-
-
-```python
-
 ```
